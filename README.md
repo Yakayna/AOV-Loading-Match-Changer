@@ -195,7 +195,6 @@ python loadtran.py --har synthetic_player_poster.har --dir anh_goc --dry-run
 
 ## Lưu ý
 
-- Không commit/push file `.har`, ảnh cá nhân, token, cache hoặc thư mục tạm.
 - Nếu gặp lỗi auth/token, capture hoặc cập nhật HAR mới.
 - Nếu sign bridge lỗi, kiểm tra Node.js và đảm bảo `sign_bridge.js`, `camp-security-oversea.0.1.0.js` nằm cùng thư mục.
 - Trên Windows, nên chạy bằng `run_combo.bat` hoặc `chay_auto.bat`; hai file này đã set `chcp 65001`, `PYTHONUTF8=1`, `PYTHONIOENCODING=utf-8` để tránh lỗi dấu tiếng Việt trong console/release.
