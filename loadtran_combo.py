@@ -121,6 +121,20 @@ def ask_text(question, default):
     return raw if raw else default
 
 
+def ask_choice(prompt, options, default=None):
+    print("\n" + color(prompt, C.CYAN))
+    for k, v in options.items():
+        mark = color("  <-- mặc định", C.GRAY) if default is not None and k == str(default) else ""
+        print("    {}[{}]{} {}{}".format(C.YELLOW + C.BOLD, k, C.RESET, v, mark))
+    while True:
+        raw = input(color("    Chọn{}: ".format(" [ENTER={}]".format(default) if default is not None else ""), C.YELLOW)).strip()
+        if not raw and default is not None:
+            return str(default)
+        if raw in options:
+            return raw
+        print(warn("Nhập một trong các lựa chọn: {}".format(" / ".join(options.keys()))))
+
+
 def parse_index_selection(raw, count, allow_all=True):
     raw = (raw or "").strip().lower().replace(",", " ")
     if allow_all and (not raw or raw in ("all", "a", "*")):
@@ -325,6 +339,72 @@ def compress_images_inplace(files, target_kb):
     return made
 
 
+def default_compress_dir(image_dir):
+    d = Path(image_dir)
+    if str(d) == "." and Path("anh_goc").exists() and discover_media("anh_goc"):
+        return "anh_goc"
+    return image_dir
+
+
+def compress_images_to_folder(files, target_kb, output_dir="compressed"):
+    """Nén nhiều ảnh ra thư mục output, không thay file gốc."""
+    import compress_for_loadtran as cf
+
+    files = [Path(f) for f in files]
+    out_dir = Path(output_dir)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    if not files:
+        print(warn("Không có ảnh nào để nén."))
+        return []
+
+    mode_txt = "MAX-READABLE" if target_kb <= 0 else "{}KB".format(target_kb)
+    args = SimpleNamespace(
+        width=1080,
+        height=1701,
+        max_kb=target_kb,
+        min_quality=10,
+        absolute_min=False,
+        format="jpg",
+        replace_original=False,
+    )
+
+    print(info("Nén {} ảnh về {} -> lưu vào {} (không thay ảnh gốc)...".format(
+        len(files), mode_txt, out_dir)))
+    made = []
+    for f in files:
+        if f.suffix.lower() not in cf.IMAGE_EXTS:
+            print(warn("{}: bỏ qua, định dạng này không nén bằng JPEG batch.".format(f.name)))
+            continue
+        try:
+            made.append(cf.compress_one(f, out_dir, args))
+        except Exception as e:
+            print(err("{}: {}".format(f.name, e)))
+    print(ok("Nén đa ảnh xong: {} file -> {}".format(len(made), out_dir)))
+    return made
+
+
+def ask_brutal_targets():
+    import brutal_mode
+
+    default_text = ",".join(map(str, brutal_mode.DEFAULT_TARGETS))
+    print("")
+    print(info("Preset Brutal mặc định: {}".format(default_text)))
+    print(color("Gợi ý: 30-40KB thường sẽ pass các ảnh khó.", C.YELLOW))
+    choice = input(color("Chọn preset: [1] mặc định, [2] tự nhập KB (ENTER=1): ", C.YELLOW)).strip()
+    if choice != "2":
+        return brutal_mode.DEFAULT_TARGETS[:]
+    while True:
+        raw = input(color("Nhập các KB muốn thử, ví dụ 20,30,40: ", C.YELLOW)).strip()
+        if not raw:
+            raw = "30,40"
+        try:
+            targets = brutal_mode.parse_targets(raw)
+            print(ok("Dùng preset tự chọn: {}".format(",".join(map(str, targets)))))
+            return targets
+        except SystemExit as e:
+            print(warn(str(e)))
+
+
 def run_loadtran(har_path, image_dir, rounds, dry_run, media_files=None):
     import loadtran
 
@@ -354,6 +434,28 @@ def main():
     print(" Dir :", color(args.dir, C.CYAN))
     print("")
 
+    main_action = ask_choice(
+        "Bạn muốn làm gì?",
+        {
+            "1": "{}Thay ảnh load{} (chạy LoadTran/HAR)".format(C.GREEN + C.BOLD, C.RESET),
+            "2": "{}Nén đa ảnh{} (chưa thay ảnh, chỉ xuất file nén)".format(C.CYAN + C.BOLD, C.RESET),
+        },
+    )
+
+    if main_action == "2":
+        image_dir = default_compress_dir(args.dir)
+        print(info("Thư mục ảnh dùng để nén: {}".format(image_dir)))
+        media_files = choose_media(image_dir, args.media)
+        if not media_files:
+            print(err("Không có ảnh để nén."))
+            return
+        target_kb = ask_int("Nén xuống bao nhiêu KB? Gợi ý 30-40 cho ảnh khó, nhập 0 = MAX-READABLE", args.compress_kb)
+        out_dir = ask_text("Thư mục lưu ảnh đã nén", "compressed")
+        made = compress_images_to_folder(media_files, target_kb, out_dir)
+        print(ok("Hoàn tất nén đa ảnh: {} file.".format(len(made))))
+        print(info("Ảnh gốc vẫn giữ nguyên. Khi muốn chạy LoadTran, chọn thư mục: {}".format(out_dir)))
+        return
+
     if args.yes_update:
         do_update = True
     elif args.no_update:
@@ -369,11 +471,32 @@ def main():
         print(color("Skip update HAR.", C.GRAY))
 
     print("")
-    do_brutal = ask_yes_no("Chạy BRUTAL MODE? (test gốc, fail thì tự nén; xóa fail ngoài anh_goc)", default=False)
-    if do_brutal:
+    auto_mode = ask_choice(
+        "Chọn chế độ auto ảnh:",
+        {
+            "0": "Chạy thường / bỏ qua auto",
+            "1": "{}Brutal Mode{} (test gốc, fail thì tự nén theo preset)".format(C.YELLOW + C.BOLD, C.RESET),
+            "2": "{}Lọc ảnh{} (chạy thẳng ảnh gốc, không nén)".format(C.CYAN + C.BOLD, C.RESET),
+        },
+    )
+    if auto_mode == "1":
         import brutal_mode
 
+        targets = ask_brutal_targets()
         brutal_mode.run_brutal(
+            har=args.har or None,
+            source_dir="anh_goc",
+            ok_dir="anh_OK",
+            fail_dir="anh_FAIL",
+            batch_size=5,
+            sleep_between_batch=6,
+            targets=targets,
+        )
+        return
+    if auto_mode == "2":
+        import brutal_mode
+
+        brutal_mode.run_filter_images(
             har=args.har or None,
             source_dir="anh_goc",
             ok_dir="anh_OK",

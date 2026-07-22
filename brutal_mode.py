@@ -774,12 +774,130 @@ def run_brutal(
     }
 
 
+def run_filter_images(
+    har=None,
+    source_dir=SOURCE_DIR,
+    ok_dir=OK_DIR,
+    fail_dir=FAIL_DIR,
+    work_dir=WORK_DIR,
+    batch_size=MAX_PER_BATCH,
+    sleep_between_batch=SLEEP_BETWEEN_BATCH,
+    include_root=True,
+    rerun_all=False,
+    all_har=False,
+    selected_image=None,
+    all_images=False,
+    interactive_select=True,
+):
+    """Lọc ảnh: chạy ảnh gốc thẳng qua LoadTran, không nén."""
+    batch_size = max(1, min(5, int(batch_size or MAX_PER_BATCH)))
+    ensure_dirs(source_dir, ok_dir, fail_dir, work_dir)
+
+    har_arg, har_label = resolve_har_choice(
+        har=har,
+        all_har=all_har,
+        interactive=interactive_select,
+    )
+    if not har_label:
+        fail("Không tìm thấy file .har!")
+        return {"ok": 0, "fail": 0, "skipped": 0}
+
+    manifest = load_manifest()
+
+    header("LỌC ẢNH - CHẠY GỐC KHÔNG NÉN")
+    print("HAR       :", color(har_label, C.GREEN))
+    print("Ảnh gốc   :", color("{} + thư mục chạy".format(source_dir) if include_root else source_dir, C.CYAN))
+    print("Ảnh OK    :", color(ok_dir, C.CYAN))
+    print("Batch     :", color(batch_size, C.CYAN))
+    print("Delay     :", color("{}s giữa các batch".format(sleep_between_batch), C.CYAN))
+    print("Fail      :", color("xóa file fail, trừ file nằm trong {}".format(source_dir), C.YELLOW))
+    print("Nén       :", color("KHÔNG nén, chạy thẳng ảnh gốc", C.YELLOW))
+    print("")
+
+    originals = discover_originals(source_dir, include_root=include_root, ok_dir=ok_dir)
+    if not originals:
+        warn("Không thấy ảnh. Hãy bỏ ảnh ngang hàng run_combo.bat hoặc vào {}".format(source_dir))
+        return {"ok": 0, "fail": 0, "skipped": 0}
+
+    pending = []
+    skipped = 0
+    for src in originals:
+        if not rerun_all and is_done(src, manifest, ok_dir):
+            skipped += 1
+            continue
+        pending.append(src)
+
+    if not pending:
+        ok("Tất cả ảnh đã có trong anh_OK hoặc manifest. Không cần chạy lại.")
+        return {"ok": 0, "fail": 0, "skipped": skipped}
+
+    pending = choose_pending_images(
+        pending,
+        selected_image=selected_image,
+        all_images=all_images,
+        interactive=interactive_select,
+    )
+    if not pending:
+        warn("Không còn ảnh nào sau bước chọn ảnh.")
+        return {"ok": 0, "fail": 0, "skipped": skipped}
+
+    runner = BatchRunner(har_arg, sleep_between_batch, har_label)
+    total_ok = 0
+    total_fail = 0
+    total_fail_kept = 0
+    total_fail_deleted = 0
+
+    for start in range(0, len(pending), batch_size):
+        batch = pending[start:start + batch_size]
+        info("Batch lọc ảnh {} ảnh".format(len(batch)))
+        for i, f in enumerate(batch, 1):
+            print("  [{}] {}".format(i, f))
+        success_idx = runner.run(batch)
+        for i, src in enumerate(batch, 1):
+            src_sig = file_sig(src)
+            if i in success_idx:
+                dest = copy_success_file(src, src, ok_dir, "LỌC ẢNH")
+                manifest[src_sig] = {"status": "OK", "ok_file": str(dest), "source": str(src), "mode": "filter-original"}
+                total_ok += 1
+                ok("{} pass lọc ảnh -> không nén".format(src.name))
+            else:
+                total_fail += 1
+                protected = is_protected_source_file(src, source_dir)
+                if protected:
+                    total_fail_kept += 1
+                    manifest[src_sig] = {"status": "FAIL", "source": str(src), "mode": "filter-original", "kept": True}
+                    fail("{} fail lọc ảnh -> nằm trong {} nên giữ nguyên".format(src.name, source_dir))
+                else:
+                    deleted = delete_failed_media(src, source_dir, "fail lọc ảnh")
+                    if deleted:
+                        total_fail_deleted += 1
+                    manifest[src_sig] = {"status": "FAIL", "source": str(src), "mode": "filter-original", "deleted": bool(deleted)}
+                    fail("{} fail lọc ảnh -> đã xóa nếu file còn tồn tại".format(src.name))
+        save_manifest(manifest)
+
+    header("LỌC ẢNH HOÀN TẤT")
+    print("{:<26}: {}".format("OK", color(total_ok, C.GREEN)))
+    print("{:<26}: {}".format("FAIL", color(total_fail, C.RED)))
+    print("{:<26}: {}".format("  giữ trong " + source_dir, color(total_fail_kept, C.YELLOW)))
+    print("{:<26}: {}".format("  đã xóa ngoài " + source_dir, color(total_fail_deleted, C.RED)))
+    print("{:<26}: {}".format("SKIP", color(skipped, C.GRAY)))
+    print("{:<26}: {}".format("Ảnh OK", color(ok_dir, C.CYAN)))
+    return {
+        "ok": total_ok,
+        "fail": total_fail,
+        "fail_kept": total_fail_kept,
+        "fail_deleted": total_fail_deleted,
+        "skipped": skipped,
+    }
+
+
 def main():
     ap = argparse.ArgumentParser(description="Brutal mode: test ảnh gốc, fail thì tự nén và test variant; xóa fail ngoài anh_goc.")
     ap.add_argument("--har", default=None, help="Chỉ định 1 file HAR; dùng --har all hoặc --all-har để chạy toàn bộ HAR")
     ap.add_argument("--all-har", action="store_true", help="Dùng toàn bộ file .har trong thư mục, không hỏi chọn HAR")
     ap.add_argument("--image", default=None, help="Chỉ định 1 ảnh cần chạy theo tên file hoặc đường dẫn")
     ap.add_argument("--all-images", action="store_true", help="Dùng toàn bộ ảnh, không hỏi chọn ảnh")
+    ap.add_argument("--filter-images", action="store_true", help="Lọc ảnh: chạy ảnh gốc thẳng, không nén")
     ap.add_argument("--non-interactive", action="store_true", help="Không hiện menu chọn; mặc định dùng toàn bộ HAR/ảnh khi có nhiều")
     ap.add_argument("--source", default=SOURCE_DIR)
     ap.add_argument("--ok-dir", default=OK_DIR)
@@ -792,7 +910,8 @@ def main():
     ap.add_argument("--rerun-all", action="store_true")
     args = ap.parse_args()
 
-    run_brutal(
+    fn = run_filter_images if args.filter_images else run_brutal
+    fn(
         har=args.har,
         source_dir=args.source,
         ok_dir=args.ok_dir,

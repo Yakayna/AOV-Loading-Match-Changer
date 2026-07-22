@@ -9,6 +9,9 @@ Tool đổi ảnh loading match/player image cho AOV/KGVN, có menu combo, auto 
 - Auto resize media về kích thước poster `1080x1701`.
 - Sign bridge bằng Node.js qua `sign_bridge.js`.
 - Menu combo: cập nhật HAR, nén ảnh, chạy LoadTran.
+- Menu đầu vào hỏi rõ:
+  - `Thay ảnh load`
+  - hoặc `Nén đa ảnh` để nén hàng loạt ra thư mục riêng, chưa thay ảnh gốc.
 - Brutal Mode:
   - Test ảnh gốc trước.
   - Nếu có nhiều hơn 1 file HAR: hiện menu chọn `1 HAR` hoặc `toàn bộ HAR`.
@@ -21,6 +24,11 @@ Tool đổi ảnh loading match/player image cho AOV/KGVN, có menu combo, auto 
   - Luôn xóa ảnh/candidate fail, trừ ảnh nằm trong thư mục `anh_goc/`.
   - Ảnh chạy được được copy vào `anh_OK/`.
   - Tổng kết hiển thị rõ OK, FAIL cuối, fail giữ trong `anh_goc/`, fail đã xóa ngoài `anh_goc/`, candidate fail đã xóa.
+- Lọc ảnh:
+  - Chọn ở khu vực Brutal/auto ảnh.
+  - Chạy thẳng ảnh gốc, không nén.
+  - Vẫn chạy batch 5 ảnh và nghỉ 6 giây giữa batch.
+  - Dùng để lọc nhanh ảnh nào pass trực tiếp.
 
 ## Cài đặt
 
@@ -69,10 +77,15 @@ python loadtran_combo.py
 
 Flow menu:
 
-1. Chọn có update HAR hay không.
-2. Chọn file `.har`.
-3. Chọn Brutal Mode nếu muốn auto batch nhiều ảnh.
-4. Nếu không dùng Brutal Mode, chọn media và chế độ nén/chạy thường.
+1. Chọn `Thay ảnh load` hoặc `Nén đa ảnh`.
+2. Nếu chọn `Nén đa ảnh`: chọn ảnh, nhập KB, chọn thư mục xuất; ảnh gốc giữ nguyên.
+3. Nếu chọn `Thay ảnh load`: chọn có update HAR hay không.
+4. Chọn chế độ auto ảnh:
+   - `0`: chạy thường
+   - `1`: Brutal Mode
+   - `2`: Lọc ảnh
+5. Nếu chọn Brutal Mode: chọn preset mặc định hoặc tự nhập list KB, ví dụ `20,30,40`.
+6. Nếu chạy thường: chọn HAR, chọn media và chế độ nén/chạy thường.
 
 ### Brutal Mode trực tiếp
 
@@ -111,6 +124,19 @@ Chạy không tương tác, tự dùng toàn bộ HAR/ảnh nếu có nhiều:
 
 ```bat
 python brutal_mode.py --non-interactive
+```
+
+Lọc ảnh trực tiếp, chạy ảnh gốc không nén:
+
+```bat
+python brutal_mode.py --filter-images --all-images
+```
+
+Nén đa ảnh riêng, chưa thay ảnh gốc:
+
+```bat
+python loadtran_combo.py
+:: Chọn: 2. Nén đa ảnh
 ```
 
 Chỉ lấy ảnh trong `anh_goc/`, không quét ảnh nằm ngang thư mục tool:
