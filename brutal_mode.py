@@ -1,16 +1,19 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-BRUTAL MODE an toan dung luong:
-  - Flow batch theo source "auto 2 anh do len": toi da 5 anh/batch.
+BRUTAL MODE an toàn dung lượng:
+  - Flow batch theo source "auto 2 ảnh đổ lên": tối đa 5 ảnh/batch.
   - Giữ nguyên nhịp nghỉ mặc định 6 giây giữa các lượt gọi loadtran.
-  - Dau tien test anh goc.
-  - Anh goc fail thi moi tao cac ban nen trong _brutal_work/ va test tiep.
-  - Anh nao chay duoc -> copy ban chay duoc vao anh_OK/.
-  - Luon xoa anh/candidate fail, TRU anh nam trong thu muc anh_goc/.
-  - Anh trong anh_goc/ khong bi xoa/move; anh fail o ngoai anh_goc/ se bi xoa.
+  - Nếu có nhiều hơn 1 HAR: cho chọn 1 HAR hoặc toàn bộ HAR.
+  - Nếu có nhiều hơn 1 ảnh: cho chọn 1 ảnh hoặc toàn bộ ảnh.
+  - Đầu tiên test ảnh gốc.
+  - Ảnh gốc fail thì mới tạo các bản nén trong _brutal_work/ và test tiếp.
+  - Ảnh nào chạy được -> copy bản chạy được vào anh_OK/.
+  - Ảnh đã pass ở mốc nào thì dừng ngay, không nén tiếp mốc thấp hơn.
+  - Luôn xóa ảnh/candidate fail, TRỪ ảnh nằm trong thư mục anh_goc/.
+  - Ảnh trong anh_goc/ không bị xóa/move; ảnh fail ở ngoài anh_goc/ sẽ bị xóa.
 
-Chay rieng:
+Chạy riêng:
   python brutal_mode.py --har synthetic_player_poster.har
 """
 
@@ -55,7 +58,7 @@ enable_windows_ansi()
 
 SOURCE_DIR = "anh_goc"
 OK_DIR = "anh_OK"
-FAIL_DIR = "anh_FAIL"      # chi giu folder cho tuong thich; khong dua anh fail vao day
+FAIL_DIR = "anh_FAIL"      # chỉ giữ folder cho tương thích; không đưa ảnh fail vào đây
 WORK_DIR = "_brutal_work"
 MANIFEST = ".brutal_manifest.json"
 MAX_PER_BATCH = 5
@@ -126,9 +129,9 @@ def parse_targets(raw):
         try:
             n = int(part)
         except ValueError:
-            raise SystemExit("Preset KB khong hop le: {}".format(part))
+            raise SystemExit("Preset KB không hợp lệ: {}".format(part))
         if n < 0:
-            raise SystemExit("Preset KB phai >= 0")
+            raise SystemExit("Preset KB phải >= 0")
         out.append(n)
     return out or DEFAULT_TARGETS[:]
 
@@ -211,7 +214,7 @@ def safe_unlink(p):
     except FileNotFoundError:
         return True
     except Exception as e:
-        warn("Khong xoa duoc {}: {}".format(Path(p).name, e))
+        warn("Không xóa được {}: {}".format(Path(p).name, e))
         return False
 
 
@@ -223,12 +226,12 @@ def safe_rmtree(p):
         shutil.rmtree(p)
         return True
     except Exception as e:
-        warn("Khong xoa duoc folder {}: {}".format(p, e))
+        warn("Không xóa được folder {}: {}".format(p, e))
         return False
 
 
 def path_in_dir(path, folder):
-    """True neu path nam trong folder (dung de bao ve anh_goc/)."""
+    """True nếu path nằm trong folder (dùng để bảo vệ anh_goc/)."""
     try:
         p = Path(path).resolve()
         root = Path(folder).resolve()
@@ -238,21 +241,21 @@ def path_in_dir(path, folder):
 
 
 def is_protected_source_file(path, source_dir=SOURCE_DIR):
-    """Anh trong thu muc anh_goc la ban goc duoc giu lai ke ca khi fail."""
+    """Ảnh trong thư mục anh_goc là bản gốc được giữ lại kể cả khi fail."""
     p = Path(path)
     return p.exists() and p.is_file() and path_in_dir(p, source_dir)
 
 
 def delete_failed_media(path, source_dir=SOURCE_DIR, reason="FAIL"):
-    """Xoa file fail, ngoai tru file nam trong thu muc anh_goc/."""
+    """Xóa file fail, ngoại trừ file nằm trong thư mục anh_goc/."""
     p = Path(path)
     if is_protected_source_file(p, source_dir):
-        warn("{} fail nhung nam trong {} -> giu nguyen".format(p.name, source_dir))
+        warn("{} fail nhưng nằm trong {} -> giữ nguyên".format(p.name, source_dir))
         return False
     if p.exists() and p.is_file():
         deleted = safe_unlink(p)
         if deleted:
-            warn("{} {} -> da xoa file fail".format(p.name, reason))
+            warn("{} {} -> đã xóa file fail".format(p.name, reason))
         return deleted
     return True
 
@@ -293,7 +296,7 @@ def candidate_dir_for(src, work_dir=WORK_DIR):
 
 
 def compress_variant(src, target_kb, work_dir=WORK_DIR):
-    """Tao 1 ban nen tu anh goc vao folder tam. Anh goc khong bi sua/xoa."""
+    """Tạo 1 bản nén từ ảnh gốc vào folder tạm. Ảnh gốc không bị sửa/xóa."""
     import compress_for_loadtran as cf
 
     src = Path(src)
@@ -337,7 +340,7 @@ def patch_loadtran_auto_inputs(loadtran):
         p = str(prompt).lower()
         if "ok" in p:
             ans = "ok"
-        elif "vong" in p:
+        elif "vòng" in p or "vong" in p:
             ans = ""
         else:
             ans = ""
@@ -346,11 +349,11 @@ def patch_loadtran_auto_inputs(loadtran):
 
     def auto_ask_choice(prompt, options):
         p = str(prompt).lower()
-        if "chuc nang" in p:
+        if "chức năng" in p or "chuc nang" in p:
             ans = "1"
-        elif "phan cong" in p:
+        elif "phân công" in p or "phan cong" in p:
             ans = "2"
-        elif "luu" in p:
+        elif "lưu" in p or "luu" in p:
             ans = "1"
         else:
             ans = sorted(options.keys())[0]
@@ -374,18 +377,20 @@ def patch_loadtran_auto_inputs(loadtran):
 
 
 class BatchRunner:
-    """Goi loadtran theo batch va giu nguyen nhịp nghỉ giữa các batch."""
+    """Gọi loadtran theo batch và giữ nguyên nhịp nghỉ giữa các batch."""
 
-    def __init__(self, har, sleep_between_batch=SLEEP_BETWEEN_BATCH):
+    def __init__(self, har, sleep_between_batch=SLEEP_BETWEEN_BATCH, har_label=None):
         self.har = har
+        self.har_label = har_label or ("Tất cả HAR" if har is None else Path(har).name)
         self.sleep_between_batch = sleep_between_batch
         self.ran = 0
 
     def run(self, media_files):
         if self.ran and self.sleep_between_batch:
-            info("Nghi {}s truoc batch tiep theo...".format(self.sleep_between_batch))
+            info("Nghỉ {}s trước batch tiếp theo...".format(self.sleep_between_batch))
             time.sleep(self.sleep_between_batch)
         self.ran += 1
+        info("Gọi LoadTran với {}.".format(self.har_label))
         return run_loadtran_batch(self.har, media_files)
 
 
@@ -426,11 +431,12 @@ def run_loadtran_batch(har, media_files):
     result = None
     try:
         with contextlib.redirect_stdout(output):
-            result = loadtran.run(str(har), ".", 1, False, [str(p) for p in media_files])
+            har_arg = None if har is None else str(Path(har).resolve())
+            result = loadtran.run(har_arg, ".", 1, False, [str(p) for p in media_files])
     except SystemExit as e:
-        print(color("loadtran dung som/SystemExit: {}".format(e), C.YELLOW))
+        print(color("loadtran dừng sớm/SystemExit: {}".format(e), C.YELLOW))
     except Exception as e:
-        print(color("Loi nghiem trong loadtran: {}".format(e), C.RED))
+        print(color("Lỗi nghiêm trọng loadtran: {}".format(e), C.RED))
     finally:
         restore()
         try:
@@ -450,18 +456,130 @@ def copy_success_file(src_file, original_src, ok_dir, label):
     if src_file.suffix.lower() in (".jpg", ".jpeg"):
         dest_name = original_src.with_suffix(".jpg").name
     else:
-        # PNG/WEBP/GIF/MP4 raw thanh cong: giu dung duoi file de tranh doi noi dung.
+        # PNG/WEBP/GIF/MP4 raw thành công: giữ đúng đuôi file để tránh đổi nội dung.
         dest_name = original_src.name
     dest = unique_path(ok_dir, dest_name)
     shutil.copy2(src_file, dest)
-    ok("{} dat {} -> {}".format(original_src.name, label, dest))
+    ok("{} đạt {} -> {}".format(original_src.name, label, dest))
     return dest
 
 
+def human_size(n):
+    try:
+        n = int(n)
+    except Exception:
+        return "?"
+    if n < 1024:
+        return "{} B".format(n)
+    if n < 1024 * 1024:
+        return "{:.1f} KB".format(n / 1024)
+    return "{:.2f} MB".format(n / 1024 / 1024)
+
+
+def discover_har_files(directory="."):
+    return sorted(
+        p for p in Path(directory).glob("*.har")
+        if p.is_file() and ".bak" not in p.name.lower()
+    )
+
+
+def ask_raw(prompt, default=""):
+    try:
+        ans = builtins.input(color(prompt, C.YELLOW)).strip()
+        return ans if ans else default
+    except EOFError:
+        return default
+
+
+def ask_index(files, prompt="Chọn số thứ tự", default=1):
+    while True:
+        raw = ask_raw("{} [ENTER={}]: ".format(prompt, default), str(default))
+        if raw.isdigit() and 1 <= int(raw) <= len(files):
+            return int(raw) - 1
+        warn("Nhập số từ 1 đến {}.".format(len(files)))
+
+
+def resolve_har_choice(har=None, all_har=False, interactive=True):
+    """Trả về (har_arg, label). har_arg=None nghĩa là dùng toàn bộ HAR trong thư mục."""
+    if har:
+        raw = str(har).strip()
+        if raw.lower() in ("all", "*", "tatca", "tấtcả", "all-har"):
+            files = discover_har_files(".")
+            if not files:
+                return None, None
+            return None, "Tất cả HAR ({} file)".format(len(files))
+        p = Path(raw)
+        if not p.exists():
+            return None, None
+        return p.resolve(), p.name
+
+    files = discover_har_files(".")
+    if not files:
+        return None, None
+    if len(files) == 1:
+        ok("Tìm thấy 1 HAR: {}".format(files[0].name))
+        return files[0].resolve(), files[0].name
+    if all_har or not interactive:
+        ok("Dùng toàn bộ {} file HAR.".format(len(files)))
+        return None, "Tất cả HAR ({} file)".format(len(files))
+
+    print("")
+    info("Có {} file HAR:".format(len(files)))
+    for i, f in enumerate(files, 1):
+        print("  [{}] {}  {}".format(i, color(f.name, C.CYAN), color(human_size(f.stat().st_size), C.GRAY)))
+    mode = ask_raw("Chọn HAR: [1] chỉ 1 file, [2] toàn bộ file HAR (ENTER=2): ", "2")
+    if mode == "1":
+        idx = ask_index(files, "Chọn file HAR", 1)
+        return files[idx].resolve(), files[idx].name
+    return None, "Tất cả HAR ({} file)".format(len(files))
+
+
+def choose_pending_images(pending, selected_image=None, all_images=False, interactive=True):
+    """Nếu nhiều ảnh thì cho chọn 1 ảnh hoặc toàn bộ ảnh."""
+    pending = list(pending)
+    if selected_image:
+        raw = str(selected_image).strip()
+        rp = None
+        try:
+            rp = Path(raw).resolve()
+        except Exception:
+            pass
+        matches = []
+        for p in pending:
+            try:
+                if rp and p.resolve() == rp:
+                    matches.append(p)
+                    continue
+            except Exception:
+                pass
+            if p.name.lower() == raw.lower():
+                matches.append(p)
+        if matches:
+            ok("Đã chọn ảnh: {}".format(matches[0].name))
+            return [matches[0]]
+        warn("Không tìm thấy ảnh đã chỉ định: {}".format(raw))
+        return []
+
+    if len(pending) <= 1 or all_images or not interactive:
+        if len(pending) > 1:
+            ok("Dùng toàn bộ {} ảnh.".format(len(pending)))
+        return pending
+
+    print("")
+    info("Có {} ảnh đang chờ xử lý:".format(len(pending)))
+    for i, f in enumerate(pending, 1):
+        size = human_size(f.stat().st_size) if f.exists() else "?"
+        print("  [{}] {}  {}".format(i, color(str(f), C.CYAN), color(size, C.GRAY)))
+    mode = ask_raw("Chọn ảnh: [1] chỉ 1 ảnh, [2] toàn bộ ảnh (ENTER=2): ", "2")
+    if mode == "1":
+        idx = ask_index(pending, "Chọn ảnh", 1)
+        return [pending[idx]]
+    return pending
+
+
 def find_first_har():
-    for f in Path(".").glob("*.har"):
-        return str(f)
-    return None
+    files = discover_har_files(".")
+    return str(files[0]) if files else None
 
 
 def run_brutal(
@@ -475,33 +593,40 @@ def run_brutal(
     targets=None,
     include_root=True,
     rerun_all=False,
+    all_har=False,
+    selected_image=None,
+    all_images=False,
+    interactive_select=True,
 ):
     targets = targets or DEFAULT_TARGETS[:]
     batch_size = max(1, min(5, int(batch_size or MAX_PER_BATCH)))
     ensure_dirs(source_dir, ok_dir, fail_dir, work_dir)
 
-    if not har:
-        har = find_first_har()
-    if not har:
-        fail("Khong tim thay file .har!")
+    har_arg, har_label = resolve_har_choice(
+        har=har,
+        all_har=all_har,
+        interactive=interactive_select,
+    )
+    if not har_label:
+        fail("Không tìm thấy file .har!")
         return {"ok": 0, "fail": 0, "skipped": 0}
 
     manifest = load_manifest()
 
-    header("BRUTAL MODE - ORIGINAL THEN COMPRESSED")
-    print("HAR       :", color(Path(har).name, C.GREEN))
-    print("Anh goc   :", color("{} + root".format(source_dir) if include_root else source_dir, C.CYAN))
-    print("Anh OK    :", color(ok_dir, C.CYAN))
-    print("Work tmp  :", color(work_dir, C.CYAN))
+    header("BRUTAL MODE - TEST GỐC RỒI NÉN")
+    print("HAR       :", color(har_label, C.GREEN))
+    print("Ảnh gốc   :", color("{} + thư mục chạy".format(source_dir) if include_root else source_dir, C.CYAN))
+    print("Ảnh OK    :", color(ok_dir, C.CYAN))
+    print("Tạm       :", color(work_dir, C.CYAN))
     print("Batch     :", color(batch_size, C.CYAN))
-    print("Preset KB :", color(",".join(map(str, targets)) + " (0=MAX-READABLE)", C.CYAN))
-    print("Delay     :", color("{}s giua cac batch".format(sleep_between_batch), C.CYAN))
-    print("Fail      :", color("xoa file fail, tru file nam trong {}".format(source_dir), C.YELLOW))
+    print("Preset KB :", color(",".join(map(str, targets)), C.CYAN))
+    print("Delay     :", color("{}s giữa các batch".format(sleep_between_batch), C.CYAN))
+    print("Fail      :", color("xóa file fail, trừ file nằm trong {}".format(source_dir), C.YELLOW))
     print("")
 
     originals = discover_originals(source_dir, include_root=include_root, ok_dir=ok_dir)
     if not originals:
-        warn("Khong thay anh. Hay bo anh ngang hang run_combo.bat hoac vao {}".format(source_dir))
+        warn("Không thấy ảnh. Hãy bỏ ảnh ngang hàng run_combo.bat hoặc vào {}".format(source_dir))
         return {"ok": 0, "fail": 0, "skipped": 0}
 
     pending = []
@@ -513,7 +638,17 @@ def run_brutal(
         pending.append(src)
 
     if not pending:
-        ok("Tat ca anh da co trong anh_OK hoac manifest. Khong can chay lai.")
+        ok("Tất cả ảnh đã có trong anh_OK hoặc manifest. Không cần chạy lại.")
+        return {"ok": 0, "fail": 0, "skipped": skipped}
+
+    pending = choose_pending_images(
+        pending,
+        selected_image=selected_image,
+        all_images=all_images,
+        interactive=interactive_select,
+    )
+    if not pending:
+        warn("Không còn ảnh nào sau bước chọn ảnh.")
         return {"ok": 0, "fail": 0, "skipped": skipped}
 
     total_ok = 0
@@ -522,37 +657,38 @@ def run_brutal(
     total_fail_deleted = 0
     source_deleted_after_ok = 0
     candidate_deleted = 0
-    runner = BatchRunner(har, sleep_between_batch)
+    runner = BatchRunner(har_arg, sleep_between_batch, har_label)
 
-    # 1) Test anh goc truoc, khong sua/xoa/move anh goc.
-    header("PASS ORIGINAL - {} anh".format(len(pending)))
+    # 1) Test ảnh gốc trước, không sửa/xóa/move ảnh gốc.
+    header("PASS ẢNH GỐC - {} ảnh".format(len(pending)))
     failed_originals = []
     for start in range(0, len(pending), batch_size):
         batch = pending[start:start + batch_size]
-        info("Batch original {} anh".format(len(batch)))
+        info("Batch ảnh gốc {} ảnh".format(len(batch)))
         for i, f in enumerate(batch, 1):
             print("  [{}] {}".format(i, f))
         success_idx = runner.run(batch)
         for i, src in enumerate(batch, 1):
             if i in success_idx:
-                dest = copy_success_file(src, src, ok_dir, "ORIGINAL")
+                dest = copy_success_file(src, src, ok_dir, "ẢNH GỐC")
                 manifest[file_sig(src)] = {"status": "OK", "ok_file": str(dest), "source": str(src), "mode": "original"}
                 total_ok += 1
+                ok("{} đã pass ảnh gốc -> không nén ảnh này".format(src.name))
             else:
                 failed_originals.append(src)
-                warn("{} fail ORIGINAL -> se tao ban nen de test".format(src.name))
+                warn("{} fail ảnh gốc -> sẽ tạo bản nén để test".format(src.name))
         save_manifest(manifest)
 
-    # 2) Chi anh goc fail moi duoc nen va test variant.
+    # 2) Chỉ ảnh gốc fail mới được nén và test variant.
     still_pending = failed_originals[:]
     for target in targets:
         if not still_pending:
             break
         mode = "MAX-READABLE" if int(target) <= 0 else "{}KB".format(target)
-        header("PASS COMPRESSED {} - {} anh".format(mode, len(still_pending)))
+        header("PASS BẢN NÉN {} - {} ảnh".format(mode, len(still_pending)))
         next_pending = []
 
-        # Tao variant sau khi original fail, roi test theo batch.
+        # Tạo variant sau khi ảnh gốc fail, rồi test theo batch.
         candidates = []
         cand_to_src = []
         for src in still_pending:
@@ -562,7 +698,7 @@ def run_brutal(
                 cand_to_src.append(src)
                 print("  {} -> {}".format(src.name, cand.name))
             except Exception as e:
-                fail("Nen loi {}: {}".format(src.name, e))
+                fail("Nén lỗi {}: {}".format(src.name, e))
                 next_pending.append(src)
 
         for start in range(0, len(candidates), batch_size):
@@ -576,18 +712,19 @@ def run_brutal(
                     dest = copy_success_file(cand, src, ok_dir, mode)
                     manifest[file_sig(src)] = {"status": "OK", "ok_file": str(dest), "source": str(src), "mode": mode}
                     total_ok += 1
+                    ok("{} đã pass ở mốc {} -> dừng nén các mốc thấp hơn cho ảnh này".format(src.name, mode))
                     cleanup_source_candidates(src, work_dir)
                     if not is_protected_source_file(src, source_dir):
-                        if delete_failed_media(src, source_dir, "ORIGINAL fail, da co ban OK"):
+                        if delete_failed_media(src, source_dir, "ảnh gốc fail, đã có bản OK"):
                             source_deleted_after_ok += 1
                 else:
                     if delete_failed_media(cand, source_dir, "{} fail".format(mode)):
                         candidate_deleted += 1
                     next_pending.append(src)
-                    warn("{} fail {} -> thu preset tiep".format(src.name, mode))
+                    warn("{} fail {} -> thử preset tiếp".format(src.name, mode))
             save_manifest(manifest)
 
-        # remove duplicates while preserving order
+        # Xóa trùng nhưng giữ thứ tự
         dedup = []
         seen = set()
         for src in next_pending:
@@ -598,7 +735,7 @@ def run_brutal(
         still_pending = dedup
 
     if still_pending:
-        header("FAIL CUOI - XOA NGOAI ANH_GOC")
+        header("FAIL CUỐI - XÓA NGOÀI ANH_GOC")
         for src in still_pending:
             total_fail += 1
             src_sig = file_sig(src)
@@ -607,25 +744,25 @@ def run_brutal(
             if protected:
                 total_fail_kept += 1
                 manifest[src_sig] = {"status": "FAIL", "source": str(src), "kept": True}
-                fail("{} FAIL het preset -> nam trong {} nen giu nguyen".format(src.name, source_dir))
+                fail("{} FAIL hết preset -> nằm trong {} nên giữ nguyên".format(src.name, source_dir))
             else:
-                deleted = delete_failed_media(src, source_dir, "FAIL het preset")
+                deleted = delete_failed_media(src, source_dir, "FAIL hết preset")
                 if deleted:
                     total_fail_deleted += 1
                 manifest[src_sig] = {"status": "FAIL", "source": str(src), "deleted": bool(deleted)}
-                fail("{} FAIL het preset -> da xoa neu file con ton tai".format(src.name))
+                fail("{} FAIL hết preset -> đã xóa nếu file còn tồn tại".format(src.name))
         save_manifest(manifest)
 
-    header("BRUTAL DONE")
+    header("BRUTAL HOÀN TẤT")
     print("{:<26}: {}".format("OK", color(total_ok, C.GREEN)))
-    print("{:<26}: {}".format("FAIL cuoi", color(total_fail, C.RED)))
-    print("{:<26}: {}".format("  giu trong " + source_dir, color(total_fail_kept, C.YELLOW)))
-    print("{:<26}: {}".format("  da xoa ngoai " + source_dir, color(total_fail_deleted, C.RED)))
+    print("{:<26}: {}".format("FAIL cuối", color(total_fail, C.RED)))
+    print("{:<26}: {}".format("  giữ trong " + source_dir, color(total_fail_kept, C.YELLOW)))
+    print("{:<26}: {}".format("  đã xóa ngoài " + source_dir, color(total_fail_deleted, C.RED)))
     print("{:<26}: {}".format("SKIP", color(skipped, C.GRAY)))
-    print("{:<26}: {}".format("Source fail da xoa sau OK", color(source_deleted_after_ok, C.YELLOW)))
-    print("{:<26}: {}".format("Candidate fail da xoa", color(candidate_deleted, C.YELLOW)))
-    print("{:<26}: {}".format("Anh OK", color(ok_dir, C.CYAN)))
-    print("{:<26}: {}".format("Thu muc tam", color(work_dir + " da don theo tung anh", C.CYAN)))
+    print("{:<26}: {}".format("Source fail đã xóa sau OK", color(source_deleted_after_ok, C.YELLOW)))
+    print("{:<26}: {}".format("Candidate fail đã xóa", color(candidate_deleted, C.YELLOW)))
+    print("{:<26}: {}".format("Ảnh OK", color(ok_dir, C.CYAN)))
+    print("{:<26}: {}".format("Thư mục tạm", color(work_dir + " đã dọn theo từng ảnh", C.CYAN)))
     return {
         "ok": total_ok,
         "fail": total_fail,
@@ -638,8 +775,12 @@ def run_brutal(
 
 
 def main():
-    ap = argparse.ArgumentParser(description="Brutal mode: test original, fail thi tu nen va test variant; xoa fail ngoai anh_goc.")
-    ap.add_argument("--har", default=None)
+    ap = argparse.ArgumentParser(description="Brutal mode: test ảnh gốc, fail thì tự nén và test variant; xóa fail ngoài anh_goc.")
+    ap.add_argument("--har", default=None, help="Chỉ định 1 file HAR; dùng --har all hoặc --all-har để chạy toàn bộ HAR")
+    ap.add_argument("--all-har", action="store_true", help="Dùng toàn bộ file .har trong thư mục, không hỏi chọn HAR")
+    ap.add_argument("--image", default=None, help="Chỉ định 1 ảnh cần chạy theo tên file hoặc đường dẫn")
+    ap.add_argument("--all-images", action="store_true", help="Dùng toàn bộ ảnh, không hỏi chọn ảnh")
+    ap.add_argument("--non-interactive", action="store_true", help="Không hiện menu chọn; mặc định dùng toàn bộ HAR/ảnh khi có nhiều")
     ap.add_argument("--source", default=SOURCE_DIR)
     ap.add_argument("--ok-dir", default=OK_DIR)
     ap.add_argument("--fail-dir", default=FAIL_DIR)
@@ -647,7 +788,7 @@ def main():
     ap.add_argument("--batch-size", type=int, default=MAX_PER_BATCH)
     ap.add_argument("--sleep", type=float, default=SLEEP_BETWEEN_BATCH)
     ap.add_argument("--targets", default=",".join(map(str, DEFAULT_TARGETS)))
-    ap.add_argument("--no-root", action="store_true", help="Chi lay anh trong anh_goc, khong lay anh ngang hang tool")
+    ap.add_argument("--no-root", action="store_true", help="Chỉ lấy ảnh trong anh_goc, không lấy ảnh ngang hàng tool")
     ap.add_argument("--rerun-all", action="store_true")
     args = ap.parse_args()
 
@@ -662,6 +803,10 @@ def main():
         targets=parse_targets(args.targets),
         include_root=not args.no_root,
         rerun_all=args.rerun_all,
+        all_har=args.all_har,
+        selected_image=args.image,
+        all_images=args.all_images,
+        interactive_select=not args.non_interactive,
     )
 
 

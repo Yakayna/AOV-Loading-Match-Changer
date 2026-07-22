@@ -11,10 +11,13 @@ Tool đổi ảnh loading match/player image cho AOV/KGVN, có menu combo, auto 
 - Menu combo: cập nhật HAR, nén ảnh, chạy LoadTran.
 - Brutal Mode:
   - Test ảnh gốc trước.
+  - Nếu có nhiều hơn 1 file HAR: hiện menu chọn `1 HAR` hoặc `toàn bộ HAR`.
+  - Nếu có nhiều hơn 1 ảnh: hiện menu chọn `1 ảnh` hoặc `toàn bộ ảnh`.
   - Nếu ảnh gốc fail mới tạo bản nén để thử tiếp.
   - Batch tối đa `5 ảnh`.
   - Nghỉ `6 giây` giữa các batch để giữ nhịp như source auto.
   - Preset nén mặc định: `70,60,50,40,45,40,36,35,32,30` KB.
+  - Ảnh đã pass ở mốc nào thì dừng ở mốc đó, không nén tiếp các mốc thấp hơn.
   - Luôn xóa ảnh/candidate fail, trừ ảnh nằm trong thư mục `anh_goc/`.
   - Ảnh chạy được được copy vào `anh_OK/`.
   - Tổng kết hiển thị rõ OK, FAIL cuối, fail giữ trong `anh_goc/`, fail đã xóa ngoài `anh_goc/`, candidate fail đã xóa.
@@ -91,6 +94,25 @@ Tùy chọn preset thủ công:
 python brutal_mode.py --har synthetic_player_poster.har --targets 70,60,50,40,45,40,36,35,32,30
 ```
 
+Dùng toàn bộ HAR, không hỏi menu chọn HAR:
+
+```bat
+python brutal_mode.py --all-har
+```
+
+Chọn sẵn 1 ảnh hoặc chạy toàn bộ ảnh không cần hỏi:
+
+```bat
+python brutal_mode.py --image ten_anh.jpg
+python brutal_mode.py --all-images
+```
+
+Chạy không tương tác, tự dùng toàn bộ HAR/ảnh nếu có nhiều:
+
+```bat
+python brutal_mode.py --non-interactive
+```
+
 Chỉ lấy ảnh trong `anh_goc/`, không quét ảnh nằm ngang thư mục tool:
 
 ```bat
@@ -150,3 +172,4 @@ python loadtran.py --har synthetic_player_poster.har --dir anh_goc --dry-run
 - Không commit/push file `.har`, ảnh cá nhân, token, cache hoặc thư mục tạm.
 - Nếu gặp lỗi auth/token, capture hoặc cập nhật HAR mới.
 - Nếu sign bridge lỗi, kiểm tra Node.js và đảm bảo `sign_bridge.js`, `camp-security-oversea.0.1.0.js` nằm cùng thư mục.
+- Trên Windows, nên chạy bằng `run_combo.bat` hoặc `chay_auto.bat`; hai file này đã set `chcp 65001`, `PYTHONUTF8=1`, `PYTHONIOENCODING=utf-8` để tránh lỗi dấu tiếng Việt trong console/release.

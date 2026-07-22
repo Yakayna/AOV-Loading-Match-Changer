@@ -1,14 +1,15 @@
 @echo off
 chcp 65001 >nul
 set PYTHONUTF8=1
-title BRUTAL LOADTRAN - XOA FAIL NGOAI ANH_GOC
+set PYTHONIOENCODING=utf-8
+title BRUTAL LOADTRAN - XÓA FAIL NGOÀI ANH_GOC
 
 cd /d "%~dp0"
 
 echo ================================================
-echo        BRUTAL LOADTRAN - XOA FAIL NGOAI ANH_GOC
-echo        Test goc truoc, fail thi tu nen
-echo        Batch 5 anh, nghi 6 giay giua batch
+echo        BRUTAL LOADTRAN - XÓA FAIL NGOÀI ANH_GOC
+echo        Test gốc trước, fail thì tự nén
+echo        Batch 5 ảnh, nghỉ 6 giây giữa batch
 echo        Preset: 70 60 50 40 45 40 36 35 32 30 KB
 echo ================================================
 echo.

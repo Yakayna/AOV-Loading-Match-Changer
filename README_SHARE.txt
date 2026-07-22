@@ -1,48 +1,51 @@
-LoadTran Combo - goi share
-===========================
+LoadTran Combo - gói share
+==========================
 
-File chay nhanh:
+File chạy nhanh:
   run_combo.bat
 
-File auto batch goc:
+File auto batch gốc:
   chay_auto.bat
   auto_full_200.py
 
-Hoac chay bang PowerShell/CMD:
+Hoặc chạy bằng PowerShell/CMD:
   python loadtran_combo.py
 
-Can cai:
+Cần cài:
   pip install -r requirements.txt
-  Node.js de sign_bridge hoat dong
+  Node.js để sign_bridge hoạt động
 
-Flow su dung:
-  1) Chay run_combo.bat
-  2) Chon co update HAR hay khong
-  3) Neu update HAR: dan link player-poster co itopencodeparam
-  4) Chon file .har neu co nhieu file .har
-  5) Chon BRUTAL MODE neu muon auto chay nhieu anh:
-     - Bo anh goc vao thu muc anh_goc/ hoac de ngang hang run_combo.bat
-     - KHONG xoa / khong move anh trong anh_goc/
-     - Tool test anh goc truoc
-     - Neu anh goc fail, tool moi tu nen ra ban tam trong _brutal_work/ va test tiep
-     - Anh dat duoc se duoc copy vao anh_OK/
-     - Luon xoa anh/candidate fail, tru anh nam trong anh_goc/
-     - Chay 5 anh moi batch
-     - Nghi 6 giay giua batch
-     - Preset nen mac dinh: 70,60,50,40,45,40,36,35,32,30
-     - Tong ket hien ro OK, FAIL cuoi, FAIL giu trong anh_goc/, FAIL da xoa ngoai anh_goc/, candidate fail da xoa
-  6) Neu khong dung brutal: chon anh/media, chon co nen anh khong
-  7) Neu nen anh thuong: nhap KB, khuyen nghi 100KB; nhap 0 = MAX-READABLE
-  8) Tool tu chay loadtran.py
+Flow sử dụng:
+  1) Chạy run_combo.bat
+  2) Chọn có update HAR hay không
+  3) Nếu update HAR: dán link player-poster có itopencodeparam
+  4) Chọn BRUTAL MODE nếu muốn auto chạy nhiều ảnh:
+     - Bỏ ảnh gốc vào thư mục anh_goc/ hoặc để ngang hàng run_combo.bat
+     - Nếu có nhiều hơn 1 file HAR: tool hỏi chọn 1 HAR hay toàn bộ HAR
+     - Nếu có nhiều hơn 1 ảnh: tool hỏi chọn 1 ảnh hay toàn bộ ảnh
+     - KHÔNG xóa / không move ảnh trong anh_goc/
+     - Tool test ảnh gốc trước
+     - Nếu ảnh gốc fail, tool mới tự nén ra bản tạm trong _brutal_work/ và test tiếp
+     - Ảnh đã pass ở mốc nào thì dừng ở mốc đó, không nén tiếp mốc thấp hơn
+     - Ảnh đạt được sẽ được copy vào anh_OK/
+     - Luôn xóa ảnh/candidate fail, trừ ảnh nằm trong anh_goc/
+     - Chạy 5 ảnh mỗi batch
+     - Nghỉ 6 giây giữa batch
+     - Preset nén mặc định: 70,60,50,40,45,40,36,35,32,30
+     - Tổng kết hiện rõ OK, FAIL cuối, FAIL giữ trong anh_goc/, FAIL đã xóa ngoài anh_goc/, candidate fail đã xóa
+  5) Nếu không dùng Brutal Mode: chọn HAR, chọn ảnh/media, chọn có nén ảnh không
+  6) Nếu nén ảnh thường: nhập KB, khuyến nghị 100KB; nhập 0 = MAX-READABLE
+  7) Tool tự chạy loadtran.py
 
-Luu y:
-  - Goi ZIP nay khong kem anh va khong kem file .har.
-  - Moi nguoi dung tu bo anh vao thu muc tool.
-  - Moi nguoi dung tu cap nhat/tai tao synthetic_player_poster.har bang link cua acc minh.
-  - Che do nen thuong se thay file goc trong thu muc dang chay.
-  - Brutal mode chi bao ve anh trong anh_goc/; file fail ngoai anh_goc/ se bi xoa.
+Lưu ý:
+  - Gói ZIP này không kèm ảnh và không kèm file .har.
+  - Người dùng tự bỏ ảnh vào thư mục tool.
+  - Người dùng tự cập nhật/tái tạo synthetic_player_poster.har bằng link của acc mình.
+  - Chế độ nén thường sẽ thay file gốc trong thư mục đang chạy.
+  - Brutal Mode chỉ bảo vệ ảnh trong anh_goc/; file fail ngoài anh_goc/ sẽ bị xóa.
+  - Trên Windows hãy chạy bằng run_combo.bat/chay_auto.bat để dùng UTF-8, tránh lỗi dấu tiếng Việt.
 
-File chinh:
+File chính:
   loadtran_combo.py
   brutal_mode.py
   auto_full_200.py

@@ -359,21 +359,22 @@ def main():
     elif args.no_update:
         do_update = False
     else:
-        do_update = ask_yes_no("Co can update .har tu link moi khong?", default=False)
+        do_update = ask_yes_no("Có cần update .har từ link mới không?", default=False)
 
-    har_path = choose_har(args.har)
     if do_update:
+        har_path = choose_har(args.har)
         update_har_interactive(har_path, args.source_har)
     else:
+        har_path = None
         print(color("Skip update HAR.", C.GRAY))
 
     print("")
-    do_brutal = ask_yes_no("Chay BRUTAL MODE? (test goc, fail thi tu nen; xoa fail ngoai anh_goc)", default=False)
+    do_brutal = ask_yes_no("Chạy BRUTAL MODE? (test gốc, fail thì tự nén; xóa fail ngoài anh_goc)", default=False)
     if do_brutal:
         import brutal_mode
 
         brutal_mode.run_brutal(
-            har=har_path,
+            har=args.har or None,
             source_dir="anh_goc",
             ok_dir="anh_OK",
             fail_dir="anh_FAIL",
@@ -388,14 +389,17 @@ def main():
     elif args.no_compress:
         do_compress = False
     else:
-        do_compress = ask_yes_no("Co can nen anh va thay anh goc khong?", default=False)
+        do_compress = ask_yes_no("Có cần nén ảnh và thay ảnh gốc không?", default=False)
 
     media_files = choose_media(args.dir, args.media)
     if do_compress:
-        target_kb = ask_int("Nen xuong bao nhieu KB? RCM 100KB, nhap 0 = MAX-READABLE", args.compress_kb)
+        target_kb = ask_int("Nén xuống bao nhiêu KB? RCM 100KB, nhập 0 = MAX-READABLE", args.compress_kb)
         media_files = compress_images_inplace(media_files, target_kb)
     else:
         print(color("Skip nen anh.", C.GRAY))
+
+    if har_path is None:
+        har_path = choose_har(args.har)
 
     print("")
     print(" HAR :", color(har_path, C.CYAN))
