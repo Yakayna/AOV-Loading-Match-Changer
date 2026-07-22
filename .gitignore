@@ -1,0 +1,27 @@
+# Runtime/caches
+__pycache__/
+*.py[cod]
+.brutal_manifest.json
+
+# User data / secrets
+*.har
+*.har.*
+*.bak
+*.token
+*.log
+
+# Media and generated folders
+anh_goc/
+anh_OK/
+anh_FAIL/
+compressed/
+_brutal_work/
+_brutal_candidates/
+_cand_test/
+brutal_*_test/
+tmp_*/
+
+# Archives/build outputs
+*.zip
+*.rar
+*.7z
