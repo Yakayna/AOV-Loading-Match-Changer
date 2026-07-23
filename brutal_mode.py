@@ -327,6 +327,131 @@ def compress_variant(src, target_kb, work_dir=WORK_DIR):
     return dest
 
 
+def parse_sanitize_boxes(raw):
+    """
+    Parse vùng che dạng:
+      "x1,y1,x2,y2;x1,y1,x2,y2"
+    Nếu giá trị <= 1 thì hiểu là tỉ lệ theo ảnh, nếu > 1 thì hiểu là pixel.
+    """
+    if not raw:
+        return None
+    boxes = []
+    for chunk in str(raw).replace("|", ";").split(";"):
+        chunk = chunk.strip()
+        if not chunk:
+            continue
+        parts = [p.strip() for p in chunk.split(",")]
+        if len(parts) != 4:
+            raise SystemExit("Vùng sanitize không hợp lệ: {}".format(chunk))
+        try:
+            boxes.append(tuple(float(x) for x in parts))
+        except ValueError:
+            raise SystemExit("Vùng sanitize không hợp lệ: {}".format(chunk))
+    return boxes or None
+
+
+def _box_to_pixels(box, width, height):
+    vals = list(box)
+    if all(0 <= v <= 1 for v in vals):
+        x1, y1, x2, y2 = (
+            int(round(vals[0] * width)),
+            int(round(vals[1] * height)),
+            int(round(vals[2] * width)),
+            int(round(vals[3] * height)),
+        )
+    else:
+        x1, y1, x2, y2 = (int(round(v)) for v in vals)
+    x1 = max(0, min(width - 1, x1))
+    y1 = max(0, min(height - 1, y1))
+    x2 = max(x1 + 1, min(width, x2))
+    y2 = max(y1 + 1, min(height, y2))
+    return x1, y1, x2, y2
+
+
+def normalize_sanitize_style(raw=None):
+    """Chỉ giữ 2 kiểu sanitize đang dùng: stripes và stripes_light."""
+    text = (str(raw or "stripes_light").strip().lower()
+            .replace(" ", "-").replace("_", "-"))
+    if text in ("1", "stripes", "stripe", "line", "lines", "gach", "gạch", "gach-trang", "gạch-trắng", "trang", "trắng"):
+        return "stripes"
+    if text in ("2", "stripes-light", "stripe-light", "light", "lighter", "mo", "mờ", "gach-mo", "gạch-mờ", "trang-mo", "trắng-mờ"):
+        return "stripes_light"
+    warn("Kiểu sanitize không rõ '{}', dùng gạch trắng mờ.".format(raw))
+    return "stripes_light"
+
+
+def sanitize_variant(src, work_dir=WORK_DIR, boxes=None, crop_margin=0.035, sanitize_style="stripes_light"):
+    """
+    Tạo bản đã sanitize vào thư mục tạm, không sửa ảnh gốc.
+
+    Việc xử lý gồm:
+      - đọc lại ảnh, xuất PNG sạch metadata;
+      - cover-resize về đúng 1080x1701;
+      - phủ gạch trắng toàn ảnh.
+    Chỉ còn 2 kiểu:
+      - stripes: gạch trắng rõ;
+      - stripes_light: gạch trắng mờ hơn để nhìn rõ ảnh hơn.
+    """
+    try:
+        from PIL import Image, ImageDraw, ImageOps
+    except ImportError:
+        raise SystemExit("Thiếu Pillow. Cài đặt: pip install Pillow")
+
+    src = Path(src)
+    folder = candidate_dir_for(src, work_dir)
+    folder.mkdir(parents=True, exist_ok=True)
+
+    if src.suffix.lower() not in IMAGE_EXTS:
+        dest = unique_path(folder, "{}__sanitize_raw{}".format(safe_stem(src.stem), src.suffix.lower()))
+        shutil.copy2(src, dest)
+        return dest
+
+    sanitize_style = normalize_sanitize_style(sanitize_style)
+
+    with Image.open(src) as im:
+        im = ImageOps.exif_transpose(im)
+        if im.mode in ("RGBA", "LA"):
+            base = Image.new("RGB", im.size, (10, 10, 10))
+            base.paste(im.convert("RGB"), mask=im.getchannel("A"))
+            im = base
+        elif im.mode == "P" and "transparency" in im.info:
+            im = im.convert("RGBA")
+            base = Image.new("RGB", im.size, (10, 10, 10))
+            base.paste(im.convert("RGB"), mask=im.getchannel("A"))
+            im = base
+        else:
+            im = im.convert("RGB")
+
+        # Không crop ở style gạch: giữ bố cục ảnh gốc.
+        ow, oh = im.size
+        target_w, target_h = 1080, 1701
+        ow, oh = im.size
+        scale = max(target_w / ow, target_h / oh)
+        nw = max(1, int(round(ow * scale)))
+        nh = max(1, int(round(oh * scale)))
+        resample = getattr(getattr(Image, "Resampling", Image), "LANCZOS", 1)
+        im = im.resize((nw, nh), resample)
+        left = max(0, (nw - target_w) // 2)
+        top = max(0, (nh - target_h) // 2)
+        im = im.crop((left, top, left + target_w, top + target_h))
+
+    if sanitize_style in ("stripes", "stripes_light"):
+        # Chỉ phủ gạch trắng toàn ảnh, không kính mờ, không blur, không ô che.
+        # stripes_light dùng alpha thấp hơn để nhìn rõ ảnh hơn.
+        im_rgba = im.convert("RGBA")
+        overlay = Image.new("RGBA", im_rgba.size, (0, 0, 0, 0))
+        draw = ImageDraw.Draw(overlay, "RGBA")
+        step = 38   # tỉ lệ giống pattern trong ảnh mẫu
+        width = 2
+        alpha = 205 if sanitize_style == "stripes" else 95
+        for x in range(-target_h, target_w + target_h + step, step):
+            draw.line((x, target_h, x + target_h, 0), fill=(255, 255, 255, alpha), width=width)
+        im_rgba = Image.alpha_composite(im_rgba, overlay)
+        dest = unique_path(folder, "{}__{}.png".format(safe_stem(src.stem), sanitize_style))
+        im_rgba.convert("RGB").save(dest, format="PNG", optimize=True, compress_level=9)
+        return dest
+
+
 def cleanup_source_candidates(src, work_dir=WORK_DIR):
     safe_rmtree(candidate_dir_for(src, work_dir))
 
@@ -456,8 +581,8 @@ def copy_success_file(src_file, original_src, ok_dir, label):
     if src_file.suffix.lower() in (".jpg", ".jpeg"):
         dest_name = original_src.with_suffix(".jpg").name
     else:
-        # PNG/WEBP/GIF/MP4 raw thành công: giữ đúng đuôi file để tránh đổi nội dung.
-        dest_name = original_src.name
+        # PNG/WEBP/GIF/MP4/sanitize thành công: giữ đúng đuôi theo nội dung file.
+        dest_name = original_src.with_suffix(src_file.suffix.lower()).name
     dest = unique_path(ok_dir, dest_name)
     shutil.copy2(src_file, dest)
     ok("{} đạt {} -> {}".format(original_src.name, label, dest))
@@ -891,6 +1016,307 @@ def run_filter_images(
     }
 
 
+
+def compress_sanitize_variant(src, target_kb, work_dir=WORK_DIR, sanitize_style="stripes_light"):
+    """Tạo bản sanitize rồi nén PNG8 theo KB vào thư mục tạm."""
+    import compress_for_loadtran as cf
+
+    src = Path(src)
+    style = normalize_sanitize_style(sanitize_style)
+    folder = candidate_dir_for(src, work_dir)
+    folder.mkdir(parents=True, exist_ok=True)
+
+    sanitized = sanitize_variant(src, work_dir=work_dir, sanitize_style=style)
+    if src.suffix.lower() not in IMAGE_EXTS:
+        return sanitized
+
+    label = "max" if int(target_kb) <= 0 else "kb{}".format(int(target_kb))
+    args = SimpleNamespace(
+        width=1080,
+        height=1701,
+        max_kb=int(target_kb),
+        min_quality=10,
+        absolute_min=False,
+        format="png8",
+        replace_original=False,
+    )
+    tmp = cf.compress_one(Path(sanitized), folder, args)
+    dest = folder / "{}__{}__{}.png".format(safe_stem(src.stem), style, label)
+    if Path(tmp).resolve() != dest.resolve():
+        safe_unlink(dest)
+        os.replace(str(tmp), str(dest))
+    try:
+        if Path(sanitized).resolve() != dest.resolve():
+            safe_unlink(sanitized)
+    except Exception:
+        pass
+    return dest
+
+
+def _run_generated_load_mode(
+    mode_title,
+    manifest_mode,
+    candidate_label,
+    candidate_builder,
+    har=None,
+    source_dir=SOURCE_DIR,
+    ok_dir=OK_DIR,
+    fail_dir=FAIL_DIR,
+    work_dir=WORK_DIR,
+    batch_size=MAX_PER_BATCH,
+    sleep_between_batch=SLEEP_BETWEEN_BATCH,
+    include_root=True,
+    rerun_all=False,
+    all_har=False,
+    selected_image=None,
+    all_images=False,
+    interactive_select=True,
+    sanitize_style="stripes_light",
+    target_kb=None,
+):
+    """Chạy các mode tạo candidate trước rồi load theo batch."""
+    batch_size = max(1, min(5, int(batch_size or MAX_PER_BATCH)))
+    ensure_dirs(source_dir, ok_dir, fail_dir, work_dir)
+    style = normalize_sanitize_style(sanitize_style)
+
+    har_arg, har_label = resolve_har_choice(
+        har=har,
+        all_har=all_har,
+        interactive=interactive_select,
+    )
+    if not har_label:
+        fail("Không tìm thấy file .har!")
+        return {"ok": 0, "fail": 0, "skipped": 0}
+
+    manifest = load_manifest()
+
+    header(mode_title)
+    print("HAR       :", color(har_label, C.GREEN))
+    print("Ảnh gốc   :", color("{} + thư mục chạy".format(source_dir) if include_root else source_dir, C.CYAN))
+    print("Ảnh OK    :", color(ok_dir, C.CYAN))
+    print("Tạm       :", color(work_dir, C.CYAN))
+    print("Batch     :", color(batch_size, C.CYAN))
+    print("Delay     :", color("{}s giữa các batch".format(sleep_between_batch), C.CYAN))
+    print("Style     :", color(style, C.CYAN))
+    if target_kb is not None:
+        mode_txt = "MAX-READABLE" if int(target_kb) <= 0 else "{}KB".format(int(target_kb))
+        print("Nén       :", color(mode_txt + " sau sanitize", C.CYAN))
+    print("Fail      :", color("xóa candidate/source fail, trừ file nằm trong {}".format(source_dir), C.YELLOW))
+    print("")
+
+    originals = discover_originals(source_dir, include_root=include_root, ok_dir=ok_dir)
+    if not originals:
+        warn("Không thấy ảnh. Hãy bỏ ảnh ngang hàng run_combo.bat hoặc vào {}".format(source_dir))
+        return {"ok": 0, "fail": 0, "skipped": 0}
+
+    pending = []
+    skipped = 0
+    for src in originals:
+        if not rerun_all and is_done(src, manifest, ok_dir):
+            skipped += 1
+            continue
+        pending.append(src)
+
+    if not pending:
+        ok("Tất cả ảnh đã có trong anh_OK hoặc manifest. Không cần chạy lại.")
+        return {"ok": 0, "fail": 0, "skipped": skipped}
+
+    pending = choose_pending_images(
+        pending,
+        selected_image=selected_image,
+        all_images=all_images,
+        interactive=interactive_select,
+    )
+    if not pending:
+        warn("Không còn ảnh nào sau bước chọn ảnh.")
+        return {"ok": 0, "fail": 0, "skipped": skipped}
+
+    runner = BatchRunner(har_arg, sleep_between_batch, har_label)
+    total_ok = 0
+    total_fail = 0
+    total_fail_kept = 0
+    total_fail_deleted = 0
+    candidate_deleted = 0
+    build_error = 0
+
+    for start_i in range(0, len(pending), batch_size):
+        src_batch = pending[start_i:start_i + batch_size]
+        header("TẠO CANDIDATE - {} ảnh".format(len(src_batch)))
+        candidates = []
+        cand_to_src = []
+        build_failed_srcs = []
+        for src in src_batch:
+            try:
+                cand = candidate_builder(src, style)
+                candidates.append(cand)
+                cand_to_src.append(src)
+                size_txt = human_size(cand.stat().st_size) if Path(cand).exists() else "?"
+                print("  {} -> {} ({})".format(src.name, Path(cand).name, size_txt))
+            except Exception as e:
+                build_error += 1
+                build_failed_srcs.append(src)
+                fail("Tạo candidate lỗi {}: {}".format(src.name, e))
+
+        if candidates:
+            info("Batch load {} candidate".format(len(candidates)))
+            success_idx = runner.run(candidates)
+        else:
+            success_idx = set()
+
+        for i, cand in enumerate(candidates, 1):
+            src = cand_to_src[i - 1]
+            src_sig = file_sig(src)
+            if i in success_idx:
+                dest = copy_success_file(cand, src, ok_dir, candidate_label)
+                manifest[src_sig] = {
+                    "status": "OK",
+                    "ok_file": str(dest),
+                    "source": str(src),
+                    "mode": manifest_mode,
+                    "style": style,
+                    "target_kb": target_kb,
+                }
+                total_ok += 1
+                ok("{} pass {} -> {}".format(src.name, candidate_label, dest.name))
+            else:
+                total_fail += 1
+                if delete_failed_media(cand, source_dir, "candidate fail"):
+                    candidate_deleted += 1
+                protected = is_protected_source_file(src, source_dir)
+                if protected:
+                    total_fail_kept += 1
+                    manifest[src_sig] = {"status": "FAIL", "source": str(src), "mode": manifest_mode, "style": style, "kept": True}
+                    fail("{} FAIL -> nằm trong {} nên giữ nguyên".format(src.name, source_dir))
+                else:
+                    deleted = delete_failed_media(src, source_dir, "source fail")
+                    if deleted:
+                        total_fail_deleted += 1
+                    manifest[src_sig] = {"status": "FAIL", "source": str(src), "mode": manifest_mode, "style": style, "deleted": bool(deleted)}
+                    fail("{} FAIL -> đã xóa nếu file còn tồn tại".format(src.name))
+            cleanup_source_candidates(src, work_dir)
+
+        for src in build_failed_srcs:
+            total_fail += 1
+            src_sig = file_sig(src)
+            protected = is_protected_source_file(src, source_dir)
+            if protected:
+                total_fail_kept += 1
+                manifest[src_sig] = {"status": "FAIL", "source": str(src), "mode": manifest_mode, "style": style, "build_error": True, "kept": True}
+            else:
+                deleted = delete_failed_media(src, source_dir, "build candidate fail")
+                if deleted:
+                    total_fail_deleted += 1
+                manifest[src_sig] = {"status": "FAIL", "source": str(src), "mode": manifest_mode, "style": style, "build_error": True, "deleted": bool(deleted)}
+            cleanup_source_candidates(src, work_dir)
+        save_manifest(manifest)
+
+    header(mode_title + " HOÀN TẤT")
+    print("{:<26}: {}".format("OK", color(total_ok, C.GREEN)))
+    print("{:<26}: {}".format("FAIL", color(total_fail, C.RED)))
+    print("{:<26}: {}".format("  giữ trong " + source_dir, color(total_fail_kept, C.YELLOW)))
+    print("{:<26}: {}".format("  đã xóa ngoài " + source_dir, color(total_fail_deleted, C.RED)))
+    print("{:<26}: {}".format("SKIP", color(skipped, C.GRAY)))
+    print("{:<26}: {}".format("Build lỗi", color(build_error, C.YELLOW)))
+    print("{:<26}: {}".format("Candidate fail đã xóa", color(candidate_deleted, C.YELLOW)))
+    print("{:<26}: {}".format("Ảnh OK", color(ok_dir, C.CYAN)))
+    return {
+        "ok": total_ok,
+        "fail": total_fail,
+        "fail_kept": total_fail_kept,
+        "fail_deleted": total_fail_deleted,
+        "candidate_deleted": candidate_deleted,
+        "build_error": build_error,
+        "skipped": skipped,
+    }
+
+
+def run_sanitize_load(
+    har=None,
+    source_dir=SOURCE_DIR,
+    ok_dir=OK_DIR,
+    fail_dir=FAIL_DIR,
+    work_dir=WORK_DIR,
+    batch_size=MAX_PER_BATCH,
+    sleep_between_batch=SLEEP_BETWEEN_BATCH,
+    include_root=True,
+    rerun_all=False,
+    all_har=False,
+    selected_image=None,
+    all_images=False,
+    interactive_select=True,
+    sanitize_style="stripes_light",
+):
+    """Sanitize + load ảnh: tạo bản gạch trắng rồi load, không test ảnh gốc trước."""
+    style = normalize_sanitize_style(sanitize_style)
+    return _run_generated_load_mode(
+        "SANITIZE + LOAD ẢNH",
+        "sanitize-load",
+        "SANITIZE LOAD",
+        lambda src, st: sanitize_variant(src, work_dir=work_dir, sanitize_style=st),
+        har=har,
+        source_dir=source_dir,
+        ok_dir=ok_dir,
+        fail_dir=fail_dir,
+        work_dir=work_dir,
+        batch_size=batch_size,
+        sleep_between_batch=sleep_between_batch,
+        include_root=include_root,
+        rerun_all=rerun_all,
+        all_har=all_har,
+        selected_image=selected_image,
+        all_images=all_images,
+        interactive_select=interactive_select,
+        sanitize_style=style,
+    )
+
+
+def run_sanitize_compress_load(
+    har=None,
+    source_dir=SOURCE_DIR,
+    ok_dir=OK_DIR,
+    fail_dir=FAIL_DIR,
+    work_dir=WORK_DIR,
+    batch_size=MAX_PER_BATCH,
+    sleep_between_batch=SLEEP_BETWEEN_BATCH,
+    include_root=True,
+    rerun_all=False,
+    all_har=False,
+    selected_image=None,
+    all_images=False,
+    interactive_select=True,
+    sanitize_style="stripes_light",
+    target_kb=40,
+):
+    """Sanitize + nén ảnh + load: tạo bản gạch trắng, nén PNG8 theo KB rồi load."""
+    style = normalize_sanitize_style(sanitize_style)
+    target_kb = int(target_kb)
+    return _run_generated_load_mode(
+        "SANITIZE + NÉN ẢNH + LOAD",
+        "sanitize-compress-load",
+        "SANITIZE + NÉN LOAD",
+        lambda src, st: compress_sanitize_variant(src, target_kb, work_dir=work_dir, sanitize_style=st),
+        har=har,
+        source_dir=source_dir,
+        ok_dir=ok_dir,
+        fail_dir=fail_dir,
+        work_dir=work_dir,
+        batch_size=batch_size,
+        sleep_between_batch=sleep_between_batch,
+        include_root=include_root,
+        rerun_all=rerun_all,
+        all_har=all_har,
+        selected_image=selected_image,
+        all_images=all_images,
+        interactive_select=interactive_select,
+        sanitize_style=style,
+        target_kb=target_kb,
+    )
+
+
+def run_sanitize_filter(*args, **kwargs):
+    """Alias cũ, giữ tương thích: hiện chạy theo Sanitize + load ảnh."""
+    return run_sanitize_load(*args, **kwargs)
+
 def main():
     ap = argparse.ArgumentParser(description="Brutal mode: test ảnh gốc, fail thì tự nén và test variant; xóa fail ngoài anh_goc.")
     ap.add_argument("--har", default=None, help="Chỉ định 1 file HAR; dùng --har all hoặc --all-har để chạy toàn bộ HAR")
@@ -898,6 +1324,12 @@ def main():
     ap.add_argument("--image", default=None, help="Chỉ định 1 ảnh cần chạy theo tên file hoặc đường dẫn")
     ap.add_argument("--all-images", action="store_true", help="Dùng toàn bộ ảnh, không hỏi chọn ảnh")
     ap.add_argument("--filter-images", action="store_true", help="Lọc ảnh: chạy ảnh gốc thẳng, không nén")
+    ap.add_argument("--sanitize-load", action="store_true", help="Sanitize + load ảnh: tạo bản gạch trắng rồi load")
+    ap.add_argument("--sanitize-compress-load", action="store_true", help="Sanitize + nén ảnh + load")
+    ap.add_argument("--sanitize-filter", action="store_true", help=argparse.SUPPRESS)
+    ap.add_argument("--sanitize-style", default="stripes-light", choices=["stripes", "stripes-light", "stripes_light"],
+                    help="Kiểu sanitize: stripes=gạch trắng rõ, stripes-light=gạch trắng mờ hơn (mặc định)")
+    ap.add_argument("--sanitize-kb", type=int, default=40, help="KB cho mode --sanitize-compress-load; 0 = MAX-READABLE")
     ap.add_argument("--non-interactive", action="store_true", help="Không hiện menu chọn; mặc định dùng toàn bộ HAR/ảnh khi có nhiều")
     ap.add_argument("--source", default=SOURCE_DIR)
     ap.add_argument("--ok-dir", default=OK_DIR)
@@ -910,8 +1342,7 @@ def main():
     ap.add_argument("--rerun-all", action="store_true")
     args = ap.parse_args()
 
-    fn = run_filter_images if args.filter_images else run_brutal
-    fn(
+    common = dict(
         har=args.har,
         source_dir=args.source,
         ok_dir=args.ok_dir,
@@ -919,7 +1350,6 @@ def main():
         work_dir=args.work_dir,
         batch_size=args.batch_size,
         sleep_between_batch=args.sleep,
-        targets=parse_targets(args.targets),
         include_root=not args.no_root,
         rerun_all=args.rerun_all,
         all_har=args.all_har,
@@ -927,6 +1357,14 @@ def main():
         all_images=args.all_images,
         interactive_select=not args.non_interactive,
     )
+    if args.sanitize_compress_load:
+        run_sanitize_compress_load(**common, sanitize_style=args.sanitize_style, target_kb=args.sanitize_kb)
+    elif args.sanitize_load or args.sanitize_filter:
+        run_sanitize_load(**common, sanitize_style=args.sanitize_style)
+    elif args.filter_images:
+        run_filter_images(**common)
+    else:
+        run_brutal(**common, targets=parse_targets(args.targets))
 
 
 if __name__ == "__main__":

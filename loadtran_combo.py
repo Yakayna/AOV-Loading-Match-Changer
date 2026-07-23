@@ -405,6 +405,18 @@ def ask_brutal_targets():
             print(warn(str(e)))
 
 
+def ask_sanitize_style():
+    style_choice = ask_choice(
+        "Chọn kiểu sanitize:",
+        {
+            "1": "Gạch trắng mờ hơn (mặc định, nhìn rõ ảnh hơn)",
+            "2": "Gạch trắng rõ toàn ảnh",
+        },
+        default="1",
+    )
+    return "stripes_light" if style_choice == "1" else "stripes"
+
+
 def run_loadtran(har_path, image_dir, rounds, dry_run, media_files=None):
     import loadtran
 
@@ -477,6 +489,8 @@ def main():
             "0": "Chạy thường / bỏ qua auto",
             "1": "{}Brutal Mode{} (test gốc, fail thì tự nén theo preset)".format(C.YELLOW + C.BOLD, C.RESET),
             "2": "{}Lọc ảnh{} (chạy thẳng ảnh gốc, không nén)".format(C.CYAN + C.BOLD, C.RESET),
+            "3": "{}Sanitize + load ảnh{} (gạch trắng rồi load, không nén)".format(C.GREEN + C.BOLD, C.RESET),
+            "4": "{}Sanitize + nén ảnh + load{} (gạch trắng, nén KB rồi load)".format(C.YELLOW + C.BOLD, C.RESET),
         },
     )
     if auto_mode == "1":
@@ -503,6 +517,37 @@ def main():
             fail_dir="anh_FAIL",
             batch_size=5,
             sleep_between_batch=6,
+        )
+        return
+    if auto_mode == "3":
+        import brutal_mode
+
+        style = ask_sanitize_style()
+        brutal_mode.run_sanitize_load(
+            har=args.har or None,
+            source_dir="anh_goc",
+            ok_dir="anh_OK",
+            fail_dir="anh_FAIL",
+            batch_size=5,
+            sleep_between_batch=6,
+            sanitize_style=style,
+        )
+        return
+    if auto_mode == "4":
+        import brutal_mode
+
+        style = ask_sanitize_style()
+        default_kb = args.compress_kb if args.compress_kb != 100 else 40
+        target_kb = ask_int("Nén xuống bao nhiêu KB sau sanitize? Gợi ý 30-40, nhập 0 = MAX-READABLE", default_kb)
+        brutal_mode.run_sanitize_compress_load(
+            har=args.har or None,
+            source_dir="anh_goc",
+            ok_dir="anh_OK",
+            fail_dir="anh_FAIL",
+            batch_size=5,
+            sleep_between_batch=6,
+            sanitize_style=style,
+            target_kb=target_kb,
         )
         return
 

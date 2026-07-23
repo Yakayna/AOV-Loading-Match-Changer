@@ -17,6 +17,7 @@ anh_FAIL/
 compressed/
 _brutal_work/
 _brutal_candidates/
+_sanitize_preview/
 _cand_test/
 brutal_*_test/
 tmp_*/
